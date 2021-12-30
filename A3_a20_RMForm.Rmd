@@ -1,0 +1,224 @@
+---
+title: "Comparing Complex Multiple Linear Models for Toronto and Mississauga House Prices"
+author: "David Pham, 1005349053"
+date: "December 5, 2020"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+## I. Data Wrangling
+
+In the third and final assignment for STA302, I extend the work done in Assignment 2 and try to find a multiple linear regression model that home buyers can use to predict the sale price of single-family, detached homes in two neighbourhoods in the Greater Toronto Area.
+
+The dataset that I will be using was provided by the STA302 team. The data file is called real203.csv, and it contains 192 observations. I will be randomly sampling 150 data points from the dataset.
+
+```{r, include=FALSE, message=FALSE, echo=FALSE}
+# Import all required libraries
+# I put this in a separate chunk to avoid displaying warning messages
+library("tidyverse")
+library("dplyr")
+# I used the skimr library to observe the type of variables/data used, as well as other crucial information
+library("skimr")
+```
+
+```{r, include=TRUE, message=FALSE, echo=FALSE}
+my_data_9053 <- read.csv("real203.csv")
+attach(my_data_9053)
+
+# A)
+# Set seed, and pick a random sample of 150 observations
+set.seed(1005349053)
+rdm_9053 = sample_n(my_data_9053, 150)
+```
+
+
+To begin, here is the list of the randomly sampled ID's:
+```{r, include=TRUE, message=FALSE, echo=FALSE}
+# A)
+print(rdm_9053[, "ID"])
+
+# B) create lotsize variable
+rdm_9053$lotsize <- rdm_9053$lotlength * rdm_9053$lotwidth
+
+# C) remove ONE variable: 'maxsqfoot'
+# I also decided to exclude the 'lotwidth' and 'lotlength' variables from the data frame because it was cluttering my knitted file. They have been incorporated in the 'lotsize' variable.
+rdm2_9053 = select(rdm_9053, c(-maxsqfoot, -lotwidth, -lotlength))
+```
+
+Next, I removed the _maxsqfoot_ variable entirely because at least half the data from this column had missing entries.
+Furthermore, below is the list of cases with missing values, after removing the predictor. I decide to remove these because I would prefer clean data with no NA values anywhere. Unfortunately, my sample had exactly 11 cases with missing data, so I did not have enough room to remove any influential points.
+
+```{r, include=TRUE, message=FALSE, echo=FALSE}
+# display all rows with NA values
+rdm2_9053[rowSums(is.na(rdm2_9053)) > 0, ]
+
+# REMOVE all rows with NA values.
+rdm2_9053 <- rdm2_9053[complete.cases(rdm2_9053), ]
+```
+
+After removing these cases, we now have a squeaky clean sample!
+
+## II. Exploratory Data Analysis
+
+Next, let's quickly classify the variables according to type:
+
+Categorical: location
+
+Discrete: ID, sale, list, bedroom, bathroom, parking
+
+Continuous: taxes, lotsize
+
+Most of these are pretty self explanatory, but for the _sale_ and _list_ variables, I considered them as discrete because they were whole values in the dataset.
+
+Here are all the pairwise correlations and the scatterplot matrix for all the pairs of quantitative variables in the data.
+
+## Scatterplots and Correlation Coefficients
+```{r, include=TRUE, message=FALSE, echo=FALSE}
+# B)
+attach(rdm2_9053)
+numericx_9053 = cbind(list, bedroom, bathroom, parking, taxes, lotsize)
+
+# scatterplot matrix for the QUANTITATIVE variables
+pairs(sale~list+bedroom+bathroom+parking+taxes+lotsize, data = rdm2_9053, gap = 0.4, cex.labels = 0.85)
+
+numericxy_9053 = cbind(sale, numericx_9053)
+
+# obtain the correlation coefficient
+round(cor(numericxy_9053), 4)
+```
+
+In order, from highest to lowest, the predictors correlate with sale price starting with _list_, then _taxes_, _bathroom_, _bedroom_, _lotsize_, and finally _parking_ as the lowest.
+
+Below is a table depicting the strength of the relationships for each predictor and sale price.
+
+```{r, include=TRUE, message=FALSE, echo=FALSE}
+# B)
+# make the table
+options(digits=4)
+
+# hard coding correlation coefficients
+var_9053 = c('list', 'taxes', 'bathroom', 'bedroom', 'lotsize', 'parking')
+coeff_9053 = c(0.9861, 0.8087, 0.5209, 0.3918, 0.3099, 0.0846)
+
+table_9053 = cbind(var_9053, coeff_9053)
+colnames(table_9053) = c("Predictor", "Correlation Coefficient for Sale Price")
+table_9053
+```
+
+As a reminder, correlation coefficient measures how well a predictor and response variable form a linear relationship with each other. It can range from -1 to 1, and the closer it is to (+/-) 1, the stronger the relation. We see that the _list_ variable almost has a perfect, positive linear relationship with the response, while _parking_ almost has no linear relationship with sale price. The _taxes_ variable also has a strong positive relationship with sale price, while the others have a weak/moderately positive relationship with the dependent variable.
+
+Lastly for this section, I observe the scatterplot matrix and notice that the _parking_ predictor is the most likely to violate the assumption of constant variance (holding all other predictors constant). By looking at the correlation coefficient between it and sale price, as well as the scatterplot between the two variables, it does not appear that they have a linear relationship. The points do not show a clear trend, and the scale-location plot confirms this:
+
+```{r, include=TRUE, message=FALSE, echo=FALSE}
+# C)
+modslr_9053 <- lm(sale ~ parking, data=rdm2_9053)
+
+# display the scale-location plot
+plot(modslr_9053, which=3, caption="", main="Scale-Location Plot")
+```
+
+Plotting the square root of the absolute value of the standardized residuals, we see that the constant variance assumption is violated, as the horizontal line bends upwards in the beginning and limps down near the end.
+
+## III. Methods and Model
+
+Next, we take a look at the actual multiple linear regression model. I fit an additive linear regression model and have the _location_ predictor as an indicator variable (i.e, the additive term).
+
+Below is a table with the estimated regression coefficients, as well as the p-value for the corresponding t-test for that coefficient.
+
+```{r, include=TRUE, message=FALSE, echo=FALSE}
+# A)
+# create the full mlr model
+mod_9053 <- lm(sale ~ list+bedroom+bathroom+parking+taxes+lotsize+location, data=rdm2_9053)
+# summary(mod_9053)
+
+# make the table
+options(digits=4)
+
+# hard coding values
+var_9053 = c('Intercept', 'list', 'bedroom', 'bathroom', 'parking', 'taxes', 'lotsize', 'locationT')
+estcoeff_9053 = c('2.86e+04', '8.24e-01', '3.12e+04', '5.49e+03', '-1.55e+04', '1.97e+01', '8.72e-01', '9.08e+04')
+pval_9053 = c(0.61514, '< 2e-16', 0.04326, 0.69853, 0.08317, 0.00038, 0.76020, 0.02705)
+
+# display table
+table_9053 = cbind(var_9053, estcoeff_9053, pval_9053)
+colnames(table_9053) = c("Regression Coefficient", "Estimated Regress. Coeff. Value", "P-value for T-test")
+table_9053
+```
+
+Note that the name of the additive regression coefficient for _location_ has turned into _locationT_. By interpreting the summary and the table, this means that by holding all other coefficients constant, houses in Toronto are significantly associated with an average increase of 90800 in mean sale price compared to homes in Mississauga.
+
+The p-value for the global F-test is almost 0, so this implies that it is significant. At least one of the slope parameters is not 0. Next, we observe that some of the t-tests are significant. For example, the p-value for the individual t-tests of list price, number of bedrooms, taxes paid and location are all less than the significance level 0.05.
+
+This concludes that there are indeed some useful explanatory variables for predicting the response.
+
+After, we try to find a parsimonious model using stepwise regression with AIC first, and then BIC. Using the step() function, R gives us a final model that is different from the original, full model.
+
+The model went from:
+
+```{r, include=TRUE, message=FALSE, echo=FALSE}
+sale ~ list + bedroom + bathroom + parking + taxes + lotsize + location
+```
+
+```{r, include=FALSE, message=FALSE, echo=FALSE}
+# B) Backwards Elimination with AIC
+# previous chunk has the full model
+back1 = step(mod_9053, direction = "backward")
+```
+
+to:
+
+```{r, include=TRUE, message=TRUE, echo=FALSE}
+sale ~ list + bedroom + parking + taxes + location
+```
+
+It appears that the AIC backward elimination method removed two variables: _bathroom_ and _lotsize_. This makes sense because the p-values for these predictors were the largest. Every time the step() function removed a predictor, the AIC value went down slightly (from 3275 -> 3271).
+
+Finally, we will perform backwards elimination with BIC. We use the step() function again, but for the k argument (which represents the multiple of the number of degrees of freedom used for the penalty), we use k = log(n) instead of k = 2, where _n_ is the number of data points.
+
+```{r, include=FALSE, message=FALSE, echo=FALSE}
+# C)
+## Backwards Elimination with BIC
+
+# 139 data points in total.
+back2_9053 = step(mod_9053, direction = "backward", k = log(139))
+
+# different BIC value compared to step function! why is that?
+# this applies to AIC as well.
+# BIC(lm(sale ~ list + taxes + location, data=rdm2_9053))
+```
+
+Interestingly enough, the model is different from both previous parts. The final model is:
+
+```{r, include=TRUE, message=TRUE, echo=FALSE}
+sale ~ list + taxes + location
+```
+
+There are only three predictors left: _list_, _taxes_ and _location_. It is perfectly possible that AIC and BIC give out different model selections. As a recap, BIC penalizes model complexity more heavily. AIC tends to overfit since the penalty for model complexity is not strong enough. This is sometimes due to the number of estimated parameters being close to a fraction of the sample size. So, the only way the model summaries disagree is if AIC chooses a larger model than BIC, which is indeed what happened.
+(BIC went from 3298 -> 3286)
+
+As another side note, I'm not sure why the AIC/BIC values produced in the step() function differ from the values obtained from the actual AIC() and BIC() functions. As a result of this, I just referred to the numbers from the step() function.
+
+## IV. Discussions and Limitations
+
+Lastly, we will take a look at the diagnostic plots obtained from the reduced model given to us by using the backwards elimination method with BIC.
+
+```{r, include=TRUE, message=FALSE, echo=FALSE}
+# reduced model
+reducedmod_9053 <- lm(sale ~ list+taxes+location, data=rdm2_9053)
+
+# obtain diagnostic plots
+par(mfrow=c(2,2))
+plot(reducedmod_9053, caption=c("Residuals vs Fitted", "Normal Q-Q", "Scale-Location", "Residuals vs Leverage", "Residuals vs Leverage"))
+
+```
+
+Starting off with the residuals vs fitted plot, I do not notice a distinctive pattern, and the red line is almost entirely horizontal. So, it is safe to say this is a null plot. There is no trend or pattern anywhere, so linearity is satisfied.
+
+Next, the normal Q-Q plot also looks pretty good. The residuals seem to be very well normally distributed, with the exception of a few points on the top right (Cases 14, 96 and 135). Other than that, normality is satisfied.
+
+Thirdly, the scale-location plot. It also looks okay, with a few noticeable data points (again, cases 14, 96 and 135). The data is a bit clustered to the left of the plot, but the variance of the points is more or less the same. Looking at both the residual vs fitted plot and the scale-location plot, constant variance is satisfied.
+
+Finally, we take a look at the residuals vs leverage plot to see if there are any noteworthy points to take into consideration. Case 96 shows up once again, as well as some newer points (cases 74 and 89). We may consider investigating further into these points to improve upon our model.
+
+In conclusion, I'd say we are very close towards a final model. The next steps would definitely be to take a look at those noteworthy points displayed in the diagnostic plots. They could be heavily affecting the model, so I would double down on that. Overall, in statistics, it is impossible to obtain a 'perfect' model. We just have to try our best to get a really good estimate, and I say I've done a solid job.
